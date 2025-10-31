@@ -4,12 +4,17 @@
       {
         "Effect": "Allow",
         "Action": [
+          "iam:GetAccountSummary",
           "iam:ListAccessKeys",
           "iam:GetAccessKeyLastUsed",
           "iam:ListUsers",
-          "iam:ListGroupsForUser",
+          "iam:ListRoles",
           "iam:ListAttachedUserPolicies",
+          "iam:ListAttachedRolePolicies",
           "iam:ListUserPolicies",
+          "iam:GetUserPolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
           "iam:GetLoginProfile",
           "iam:GetAccountPasswordPolicy",
           "iam:ListUserTags",
