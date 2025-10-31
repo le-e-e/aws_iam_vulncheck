@@ -1,0 +1,26 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "iam:ListAccessKeys",
+          "iam:GetAccessKeyLastUsed",
+          "iam:ListUsers",
+          "iam:ListGroupsForUser",
+          "iam:ListAttachedUserPolicies",
+          "iam:ListUserPolicies",
+          "iam:GetLoginProfile",
+          "iam:GetAccountPasswordPolicy",
+          "iam:ListUserTags",
+          "iam:ListMFADevices",
+          "cloudtrail:LookupEvents",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "ses:SendEmail"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
