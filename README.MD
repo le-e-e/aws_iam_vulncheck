@@ -2,54 +2,27 @@
 
 AWS Lambda를 활용한 자동화된 IAM 보안 취약점 진단 도구입니다.
 
-SK 쉴더스 클라우드 보안 가이드와 AWS 보안 모범사례를 참고하여 점검 항목을 선정했습니다.
-
-참고 문서: https://rogue-gouda-f87.notion.site/AWS-de0b5749d03b464ea2e555cba3974d0b
+SK 쉴더스 클라우드 보안 가이드와 AWS 보안 모범사례를 참고하여 점검 항목을 선정하였다.
 
 ---
 
 ## 점검 항목
 
-총 12개 항목을 점검합니다:
-
 1. **ROOT 계정 Access Key 발급**
-   - ROOT 계정에 Access Key 발급 이력 존재 여부
-
 2. **ROOT 계정 사용 이력**
-   - ROOT 계정 실제 사용 이력 존재 여부
-
 3. **30일 이상 미사용 Access Key**
-   - 장기간 사용하지 않은 Access Key 탐지
-
 4. **장기간 갱신하지 않은 Access Key (90일 이상)**
-   - 90일 이상 갱신하지 않은 Access Key 탐지
-
 5. **IAM 계정에 직접 정책 연결 여부**
-   - 그룹 기반 권한 관리 미적용 여부
-
 6. **비밀번호 정책 위배**
-   - 복잡도 미준수 (2종류 10자 이상 또는 3종류 8자 이상)
-   - 분기별 변경 미적용 (90일 이내)
-
 7. **장기간 미사용 IAM 계정**
-   - 90일 이상 미사용 계정 탐지
-
 8. **STS 미사용 직접 핸들링**
-   - STS 임시 자격증명 미사용 여부
-
 9. **태그 미설정 계정**
-   - IAM 계정 태그 미설정 여부
-
 10. **MFA 미설정 계정**
-    - 콘솔 접근 가능 계정의 MFA 미설정 여부
-
 11. **유휴 Role·User (90~180일)**
-    - 90일 이상 180일 이하 미사용 Role 및 User 탐지
-
 12. **과도한 권한 (wildcard, iam:PassRole)**
-    - 정책 내 wildcard 권한 및 iam:PassRole 남용 탐지
 
-상세 점검 방법: https://lee-cloud-security.notion.site/AWS-IAM-fcfe3e5df6ee4374b76ec503e2e8c62f
+
+상세 내용: https://lee-cloud-security.notion.site/AWS-IAM-fcfe3e5df6ee4374b76ec503e2e8c62f
 
 ---
 
@@ -64,13 +37,8 @@ pip install -r requirements.txt -t python/
 zip -r layer.zip python
 ```
 
-생성된 `layer.zip` 파일을 Lambda Layer로 업로드합니다.
+`layer.zip` 파일을 람다의 계층에 업로드한다.
 
-### Lambda 함수 배포
-
-1. Lambda 함수에 코드 업로드
-2. Layer 연결
-3. 실행 역할 설정 (IAM, CloudTrail 읽기 권한 필요)
 
 ---
 
