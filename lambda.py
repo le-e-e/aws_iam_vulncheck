@@ -962,45 +962,8 @@ def send_email_report(results_data, recipient_email):
     
     ses = boto3.client('ses', region_name='ap-northeast-2')  # SES 리전 설정
     
-    # HTML 이메일 본문 생성
-    html_body = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; }}
-            .summary {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-            .summary-item {{ display: inline-block; margin: 10px 20px; text-align: center; }}
-            .summary-number {{ font-size: 36px; font-weight: bold; color: #667eea; }}
-            .summary-label {{ font-size: 14px; color: #666; }}
-            .section {{ margin: 25px 0; }}
-            .check-item {{ background: white; border-left: 4px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-            .check-item.vulnerable {{ border-left-color: #dc3545; background: #fff5f5; }}
-            .check-item.warning {{ border-left-color: #ffc107; background: #fffbf0; }}
-            .check-item.safe {{ border-left-color: #28a745; background: #f0fff4; }}
-            .check-title {{ font-weight: bold; font-size: 16px; margin-bottom: 8px; }}
-            .status {{ display: inline-block; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; }}
-            .status.vulnerable {{ background: #dc3545; color: white; }}
-            .status.warning {{ background: #ffc107; color: #333; }}
-            .status.safe {{ background: #28a745; color: white; }}
-            .details {{ font-size: 14px; color: #666; margin-top: 8px; }}
-            .footer {{ text-align: center; padding: 20px; color: #999; font-size: 12px; border-top: 1px solid #eee; margin-top: 30px; }}
-            table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
-            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-            th {{ background-color: #667eea; color: white; font-weight: bold; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>AWS IAM 보안 취약점 진단 보고서</h1>
-            <p>진단 시간: {datetime.now().strftime('%Y년 %m월 %d일 %H:%M:%S')}</p>
-        </div>
-        
-        <div class="summary">
-            <div class="summary-item">
-                <div class="summary-number">{sum([
+    # 취약점 계산
+    critical_count = sum([
                     1 if results_data['access_key_result'] == 'O' else 0,
                     1 if results_data['root_usage_result'] == 'O' else 0,
                     1 if results_data['inactive_keys'] else 0,
@@ -1008,186 +971,251 @@ def send_email_report(results_data, recipient_email):
                     1 if results_data['users_with_direct_policy'] else 0,
                     1 if results_data['non_compliant_passwords'] else 0,
                     1 if results_data['no_lifecycle_users'] else 0,
+        1 if results_data['users_without_mfa'] else 0,
+        1 if results_data['excessive_permissions'] else 0,
+    ])
+    
+    warning_count = sum([
                     1 if results_data['iam_direct_access'] == 'O' else 0,
                     1 if results_data['users_without_tags'] else 0,
-                    1 if results_data['users_without_mfa'] else 0,
                     1 if results_data['idle_roles'] or results_data['idle_users_extended'] else 0,
-                    1 if results_data['excessive_permissions'] else 0,
-                ])}</div>
-                <div class="summary-label">발견된 취약점</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-number">12</div>
-                <div class="summary-label">전체 점검 항목</div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>상세 진단 결과</h2>
-            
-            <div class="check-item {'vulnerable' if results_data['access_key_result'] == 'O' else 'safe'}">
-                <div class="check-title">
-                    1. ROOT 계정 Access Key 발급 여부
-                    <span class="status {'vulnerable' if results_data['access_key_result'] == 'O' else 'safe'}">
-                        {'취약' if results_data['access_key_result'] == 'O' else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    ROOT 계정에 Access Key가 발급되어 있으면 보안상 매우 위험합니다.
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['root_usage_result'] == 'O' else 'safe'}">
-                <div class="check-title">
-                    2. ROOT 계정 사용 이력
-                    <span class="status {'vulnerable' if results_data['root_usage_result'] == 'O' else 'safe'}">
-                        {'취약' if results_data['root_usage_result'] == 'O' else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    ROOT 계정은 긴급한 경우를 제외하고 사용하지 않는 것을 권장합니다.
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['inactive_keys'] else 'safe'}">
-                <div class="check-title">
-                    3. 30일 이상 미사용 Access Key
-                    <span class="status {'vulnerable' if results_data['inactive_keys'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['inactive_keys'])) + '개)' if results_data['inactive_keys'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    {', '.join([k['user'] + ' (' + str(k['days_unused']) + '일)' for k in results_data['inactive_keys'][:10]]) if results_data['inactive_keys'] else '미사용 키가 없습니다.'}
-                    {'...' if len(results_data['inactive_keys']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['no_rotation_keys'] else 'safe'}">
-                <div class="check-title">
-                    4. Access Key 변경 주기 미준수 (90일 이상)
-                    <span class="status {'vulnerable' if results_data['no_rotation_keys'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['no_rotation_keys'])) + '개)' if results_data['no_rotation_keys'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    {', '.join([k['user'] + ' (' + str(k['age_days']) + '일)' for k in results_data['no_rotation_keys'][:10]]) if results_data['no_rotation_keys'] else 'Access Key가 주기적으로 변경되고 있습니다.'}
-                    {'...' if len(results_data['no_rotation_keys']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['users_with_direct_policy'] else 'safe'}">
-                <div class="check-title">
-                    5. IAM 계정 직접 권한 부여
-                    <span class="status {'vulnerable' if results_data['users_with_direct_policy'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['users_with_direct_policy'])) + '명)' if results_data['users_with_direct_policy'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    {', '.join([u['user'] for u in results_data['users_with_direct_policy'][:10]]) if results_data['users_with_direct_policy'] else '모든 계정이 그룹을 통해 권한을 부여받고 있습니다.'}
-                    {'...' if len(results_data['users_with_direct_policy']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['non_compliant_passwords'] else 'safe'}">
-                <div class="check-title">
-                    6. 비밀번호 정책 위배
-                    <span class="status {'vulnerable' if results_data['non_compliant_passwords'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['non_compliant_passwords'])) + '명)' if results_data['non_compliant_passwords'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    권장: 2종류 조합 10자 이상 또는 3종류 조합 8자 이상, 90일마다 변경
-                    <br>{', '.join([u['user'] for u in results_data['non_compliant_passwords'][:10]]) if results_data['non_compliant_passwords'] else '비밀번호 정책이 준수되고 있습니다.'}
-                    {'...' if len(results_data['non_compliant_passwords']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['no_lifecycle_users'] else 'safe'}">
-                <div class="check-title">
-                    7. IAM Life-Cycle 미수립 (90일 미사용)
-                    <span class="status {'vulnerable' if results_data['no_lifecycle_users'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['no_lifecycle_users'])) + '명)' if results_data['no_lifecycle_users'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    {', '.join([u['user'] + ' (' + str(u['days_inactive']) + '일)' for u in results_data['no_lifecycle_users'][:10]]) if results_data['no_lifecycle_users'] else '모든 계정이 활발히 사용되고 있습니다.'}
-                    {'...' if len(results_data['no_lifecycle_users']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'warning' if results_data['iam_direct_access'] == 'O' else 'safe'}">
-                <div class="check-title">
-                    8. STS 미사용 직접 리소스 핸들링 (권고사항)
-                    <span class="status {'warning' if results_data['iam_direct_access'] == 'O' else 'safe'}">
-                        {'권고' if results_data['iam_direct_access'] == 'O' else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    STS(Temporary Credentials) 사용을 권장합니다.
-                </div>
-            </div>
-            
-            <div class="check-item {'warning' if results_data['users_without_tags'] else 'safe'}">
-                <div class="check-title">
-                    9. 태그 미설정 계정 (권고사항)
-                    <span class="status {'warning' if results_data['users_without_tags'] else 'safe'}">
-                        {'권고 (' + str(len(results_data['users_without_tags'])) + '개)' if results_data['users_without_tags'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    {', '.join(results_data['users_without_tags'][:10]) if results_data['users_without_tags'] else '모든 계정에 태그가 설정되어 있습니다.'}
-                    {'...' if len(results_data['users_without_tags']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['users_without_mfa'] else 'safe'}">
-                <div class="check-title">
-                    10. MFA 미설정 계정
-                    <span class="status {'vulnerable' if results_data['users_without_mfa'] else 'safe'}">
-                        {'취약 (' + str(len(results_data['users_without_mfa'])) + '명)' if results_data['users_without_mfa'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    콘솔 로그인 가능한 계정의 MFA 설정을 권장합니다.
-                    <br>{', '.join(results_data['users_without_mfa'][:10]) if results_data['users_without_mfa'] else '모든 계정에 MFA가 설정되어 있습니다.'}
-                    {'...' if len(results_data['users_without_mfa']) > 10 else ''}
-                </div>
-            </div>
-            
-            <div class="check-item {'warning' if results_data['idle_roles'] or results_data['idle_users_extended'] else 'safe'}">
-                <div class="check-title">
-                    11. 미사용/유휴 Role·User (90~180일)
-                    <span class="status {'warning' if results_data['idle_roles'] or results_data['idle_users_extended'] else 'safe'}">
-                        {'권고 (Role: ' + str(len(results_data['idle_roles'])) + '개, User: ' + str(len(results_data['idle_users_extended'])) + '명)' if results_data['idle_roles'] or results_data['idle_users_extended'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    장기간 사용하지 않는 Role과 User는 보안상 삭제를 권장합니다.
-                    {('<br>Role: ' + ', '.join([r['role'] + ' (' + str(r['days_unused']) + '일)' for r in results_data['idle_roles'][:5]]) + ('...' if len(results_data['idle_roles']) > 5 else '')) if results_data['idle_roles'] else ''}
-                    {('<br>User: ' + ', '.join([u['user'] + ' (' + str(u['days_unused']) + '일)' for u in results_data['idle_users_extended'][:5]]) + ('...' if len(results_data['idle_users_extended']) > 5 else '')) if results_data['idle_users_extended'] else ''}
-                    {'' if results_data['idle_roles'] or results_data['idle_users_extended'] else '<br>유휴 Role/User가 없습니다.'}
-                </div>
-            </div>
-            
-            <div class="check-item {'vulnerable' if results_data['excessive_permissions'] else 'safe'}">
-                <div class="check-title">
-                    12. 과도한 권한 (wildcard, iam:PassRole)
-                    <span class="status {'vulnerable' if results_data['excessive_permissions'] else 'safe'}">
-                        {'위험 (' + str(len(results_data['excessive_permissions'])) + '개)' if results_data['excessive_permissions'] else '양호'}
-                    </span>
-                </div>
-                <div class="details">
-                    Action "*" 또는 Resource "*" 또는 iam:PassRole이 "*"인 정책을 사용하는 것은 매우 위험합니다.
-                    {('<br>' + '<br>'.join([('[User] ' if 'user' in item else '[Role] ') + (item.get('user') or item.get('role')) + ': ' + ', '.join(item['issues'][:3]) for item in results_data['excessive_permissions'][:5]])) if results_data['excessive_permissions'] else '<br>과도한 권한이 없습니다.'}
-                    {'<br>...' if len(results_data['excessive_permissions']) > 5 else ''}
-                </div>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>이 보고서는 AWS Lambda를 통해 자동 생성되었습니다.</p>
-            <p>문의사항이 있으시면 보안팀에 연락해주세요.</p>
-        </div>
+    ])
+    
+    safe_count = 12 - critical_count - warning_count
+    
+    # HTML 이메일 본문 생성 (이메일 호환성을 위한 테이블 기반 레이아웃)
+    html_body = f"""
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>AWS IAM 보안 진단 보고서</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f5f7fa; font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f7fa;">
+            <tr>
+                <td align="center" style="padding: 40px 20px;">
+                    
+                    <!-- Main Container -->
+                    <table border="0" cellpadding="0" cellspacing="0" width="950" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                        
+                        <!-- Header -->
+                        <tr>
+                            <td style="background: linear-gradient(135deg, #2c5282 0%, #2d3748 100%); background-color: #2c5282; padding: 40px 30px; text-align: center; color: #ffffff;">
+                                <h1 style="margin: 0 0 10px 0; font-size: 28px; font-weight: 700; color: #ffffff;">AWS IAM 보안 진단 보고서</h1>
+                                <p style="margin: 10px 0 0 0; font-size: 13px; color: #cbd5e0;">진단일시: {datetime.now().strftime('%Y년 %m월 %d일 %H:%M')}</p>
+                            </td>
+                        </tr>
+                        
+                        <!-- Summary Section -->
+                        <tr>
+                            <td style="padding: 35px 30px; background-color: #f8f9fa;">
+                                <h2 style="margin: 0 0 25px 0; font-size: 20px; font-weight: 700; color: #1a202c; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px;">요약</h2>
+                                
+                                <!-- Metrics Table -->
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td width="25%" align="center" style="padding: 20px 10px; background-color: #ffffff; border-radius: 6px;">
+                                            <div style="font-size: 42px; font-weight: 800; color: #e53e3e; margin-bottom: 8px;">{critical_count}</div>
+                                            <div style="font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase;">위험</div>
+                                        </td>
+                                        <td width="10"></td>
+                                        <td width="25%" align="center" style="padding: 20px 10px; background-color: #ffffff; border-radius: 6px;">
+                                            <div style="font-size: 42px; font-weight: 800; color: #dd6b20; margin-bottom: 8px;">{warning_count}</div>
+                                            <div style="font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase;">권고</div>
+                                        </td>
+                                        <td width="10"></td>
+                                        <td width="25%" align="center" style="padding: 20px 10px; background-color: #ffffff; border-radius: 6px;">
+                                            <div style="font-size: 42px; font-weight: 800; color: #38a169; margin-bottom: 8px;">{safe_count}</div>
+                                            <div style="font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase;">양호</div>
+                                        </td>
+                                        <td width="10"></td>
+                                        <td width="25%" align="center" style="padding: 20px 10px; background-color: #ffffff; border-radius: 6px;">
+                                            <div style="font-size: 42px; font-weight: 800; color: #4299e1; margin-bottom: 8px;">12</div>
+                                            <div style="font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase;">총 항목</div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        
+                        <!-- Content Section -->
+                        <tr>
+                            <td style="padding: 35px 30px;">
+                                <h2 style="margin: 0 0 25px 0; font-size: 20px; font-weight: 700; color: #1a202c; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px;">상세 진단 결과</h2>
+                                
+                                <!-- Finding Items Table -->
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse;">
+                                    <thead>
+                                        <tr>
+                                            <th style="background-color: #edf2f7; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; color: #2d3748; border: 1px solid #e2e8f0; width: 50px;">No.</th>
+                                            <th style="background-color: #edf2f7; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; color: #2d3748; border: 1px solid #e2e8f0; width: 200px;">점검 항목</th>
+                                            <th style="background-color: #edf2f7; padding: 12px; text-align: center; font-size: 13px; font-weight: 600; color: #2d3748; border: 1px solid #e2e8f0; width: 90px;">결과</th>
+                                            <th style="background-color: #edf2f7; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; color: #2d3748; border: 1px solid #e2e8f0;">상세 내용</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Item 1 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">1</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">ROOT 계정 Access Key 발급</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['access_key_result'] == 'O' else '#38a169'};">{'취약' if results_data['access_key_result'] == 'O' else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {'ROOT Access Key 생성 이력 확인됨' if results_data['access_key_result'] == 'O' else 'ROOT Access Key 없음'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 2 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">2</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">ROOT 계정 사용 이력</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['root_usage_result'] == 'O' else '#38a169'};">{'취약' if results_data['root_usage_result'] == 'O' else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {'최근 ROOT 계정 사용 이력 발견' if results_data['root_usage_result'] == 'O' else 'ROOT 계정 사용 이력 없음'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 3 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">3</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">30일 이상 미사용 Access Key</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['inactive_keys'] else '#38a169'};">{'취약' if results_data['inactive_keys'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['inactive_keys'])}개 발견<br/>" + '<br/>'.join([f"• {k['user']}: {k['days_unused']}일 미사용 (마지막: {k['last_used']})" for k in results_data['inactive_keys']]) if results_data['inactive_keys'] else '미사용 키 없음'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 4 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">4</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">Access Key 미변경 (90일+)</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['no_rotation_keys'] else '#38a169'};">{'취약' if results_data['no_rotation_keys'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['no_rotation_keys'])}개 발견<br/>" + '<br/>'.join([f"• {k['user']}/{k['key_id']}: {k['age_days']}일 경과 (생성일: {k['created']}, 상태: {k['status']})" for k in results_data['no_rotation_keys']]) if results_data['no_rotation_keys'] else 'Access Key 주기적 갱신 중'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 5 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">5</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">IAM 계정 직접 권한 부여</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['users_with_direct_policy'] else '#38a169'};">{'취약' if results_data['users_with_direct_policy'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['users_with_direct_policy'])}명 발견<br/>" + '<br/>'.join([f"• {u['user']}: 총 {u['total_count']}개 정책 ({', '.join(u['managed_policies'][:3])}" + (f", ..." if len(u['managed_policies']) > 3 else '') + (f", {len(u['inline_policies'])}개 인라인)" if u['inline_policies'] else '') + ")" for u in results_data['users_with_direct_policy']]) if results_data['users_with_direct_policy'] else '그룹 기반 권한 관리 중'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 6 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">6</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">비밀번호 정책 위배</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['non_compliant_passwords'] else '#38a169'};">{'취약' if results_data['non_compliant_passwords'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['non_compliant_passwords'])}명 발견<br/>" + '<br/>'.join([f"• {u['user']}: {u['issues']} (비밀번호 나이: {u['password_age']}일, 마지막 사용: {u['last_used']})" for u in results_data['non_compliant_passwords']]) if results_data['non_compliant_passwords'] else '비밀번호 정책 준수 중'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 7 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">7</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">Life-Cycle 미수립 (90일 미사용)</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['no_lifecycle_users'] else '#38a169'};">{'취약' if results_data['no_lifecycle_users'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['no_lifecycle_users'])}명 발견<br/>" + '<br/>'.join([f"• {u['user']}: {u['days_inactive']}일 미사용 (마지막 활동: {u['last_activity']}, 유형: {u['activity_type']})" for u in results_data['no_lifecycle_users']]) if results_data['no_lifecycle_users'] else '모든 계정 활성 상태'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 8 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">8</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">STS 미사용 직접 핸들링</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#dd6b20' if results_data['iam_direct_access'] == 'O' else '#38a169'};">{'권고' if results_data['iam_direct_access'] == 'O' else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {'STS 임시 자격증명 사용 권장' if results_data['iam_direct_access'] == 'O' else 'STS 기반 접근 중'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 9 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">9</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">태그 미설정 계정</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#dd6b20' if results_data['users_without_tags'] else '#38a169'};">{'권고' if results_data['users_without_tags'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['users_without_tags'])}명 발견<br/>" + '<br/>'.join([f"• {user}" for user in results_data['users_without_tags']]) if results_data['users_without_tags'] else '모든 계정 태그 설정됨'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 10 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">10</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">MFA 미설정 계정</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['users_without_mfa'] else '#38a169'};">{'취약' if results_data['users_without_mfa'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['users_without_mfa'])}명 발견<br/>" + '<br/>'.join([f"• {user}" for user in results_data['users_without_mfa']]) if results_data['users_without_mfa'] else 'MFA 설정 완료'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 11 -->
+                                        <tr>
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">11</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">유휴 Role·User (90~180일)</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#dd6b20' if results_data['idle_roles'] or results_data['idle_users_extended'] else '#38a169'};">{'권고' if results_data['idle_roles'] or results_data['idle_users_extended'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {('Role: ' + '<br/>'.join([f"• {r['role']}: {r['days_unused']}일 미사용 (마지막: {r['last_used']})" for r in results_data['idle_roles']]) + '<br/>' if results_data['idle_roles'] else '') + ('User: ' + '<br/>'.join([f"• {u['user']}: {u['days_inactive']}일 미사용 (마지막: {u['last_activity']})" for u in results_data['idle_users_extended']]) if results_data['idle_users_extended'] else '') if results_data['idle_roles'] or results_data['idle_users_extended'] else '유휴 리소스 없음'}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Item 12 -->
+                                        <tr style="background-color: #f7fafc;">
+                                            <td style="padding: 12px; font-size: 14px; color: #4a5568; border: 1px solid #e2e8f0; font-weight: 600;">12</td>
+                                            <td style="padding: 12px; font-size: 14px; color: #2d3748; border: 1px solid #e2e8f0; font-weight: 500;">과도한 권한 (wildcard)</td>
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #e2e8f0;">
+                                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; background-color: {'#e53e3e' if results_data['excessive_permissions'] else '#38a169'};">{'위험' if results_data['excessive_permissions'] else '양호'}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-size: 13px; color: #4a5568; border: 1px solid #e2e8f0;">
+                                                {f"{len(results_data['excessive_permissions'])}개 발견<br/>" + '<br/>'.join([f"• [{('User' if 'user' in item else 'Role')}] {item.get('user') or item.get('role')}:<br/>&nbsp;&nbsp;" + '<br/>&nbsp;&nbsp;'.join(item['issues']) for item in results_data['excessive_permissions']]) if results_data['excessive_permissions'] else '과도한 권한 없음'}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                        
+                        <!-- Footer -->
+                        <tr>
+                            <td style="padding: 30px; text-align: center; background-color: #f8f9fa; border-top: 1px solid #e2e8f0;">
+                                <p style="margin: 0 0 8px 0; font-size: 13px; color: #718096;">직접 리소스 확인 필요</p>
+                            </td>
+                        </tr>
+                        
+                    </table>
+                    
+                </td>
+            </tr>
+        </table>
     </body>
     </html>
     """
